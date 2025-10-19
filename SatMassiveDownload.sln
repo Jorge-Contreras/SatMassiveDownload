@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sat.MassiveDownload", "SatMassiveDownload\Sat.MassiveDownload.csproj", "{7212C37A-FB75-4A8F-B107-4E1B7A8FAD07}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sat.MassiveDownload.Sample", "Sat.MassiveDownload.Sample\Sat.MassiveDownload.Sample.csproj", "{6C54EFA1-F732-4374-943B-F2B9FF7137C2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7212C37A-FB75-4A8F-B107-4E1B7A8FAD07}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7212C37A-FB75-4A8F-B107-4E1B7A8FAD07}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7212C37A-FB75-4A8F-B107-4E1B7A8FAD07}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7212C37A-FB75-4A8F-B107-4E1B7A8FAD07}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6C54EFA1-F732-4374-943B-F2B9FF7137C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C54EFA1-F732-4374-943B-F2B9FF7137C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C54EFA1-F732-4374-943B-F2B9FF7137C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C54EFA1-F732-4374-943B-F2B9FF7137C2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {693FBE9B-EF7E-49C3-A1D9-26977C1ACEFD}
+	EndGlobalSection
+EndGlobal
