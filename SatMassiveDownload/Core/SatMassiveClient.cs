@@ -10,6 +10,7 @@ using Sat.MassiveDownload.Models;
 
 
 
+
 namespace Sat.MassiveDownload;
 
 public sealed class SatMassiveClient : ISatMassiveService
@@ -465,26 +466,7 @@ public sealed class SatMassiveClient : ISatMassiveService
         return node?.InnerText?.Trim() ?? string.Empty;
     }
 
-    public enum EstadoSolicitud
-    {
-        Aceptada = 1,
-        EnProceso = 2,
-        Terminada = 3,
-        Error = 4,
-        Rechazada = 5,
-        Vencida = 6
-    }
-
-    public sealed record VerifyResult(
-        string Mensaje,
-        string CodEstatus,
-        string CodigoEstadoSolicitud,
-        EstadoSolicitud Estado,
-        int NumeroCfdis,
-        IReadOnlyList<string> IdsPaquetes,
-        bool IsFinal,
-        string HumanStatus
-    );
+   
 
     private static readonly IReadOnlyDictionary<string, string> CodigoEstadoSolicitudMap = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -512,32 +494,44 @@ public sealed class SatMassiveClient : ISatMassiveService
         ["5011"] = "Límite de descargas por folio por día"
     };
 
-    public static VerifyResult ParseVerify(string xml)
+    private static VerifyResult ParseVerify(string xml)
     {
         var d = new XmlDocument { PreserveWhitespace = true };
         d.LoadXml(xml);
 
-        var result = d.SelectSingleNode("//*[local-name()='VerificaSolicitudDescargaResult']") as XmlElement
-                     ?? throw new InvalidOperationException("No se encontró VerificaSolicitudDescargaResult");
+        var res = d.SelectSingleNode("//*[local-name()='VerificaSolicitudDescargaResult']") as XmlElement
+                  ?? throw new InvalidOperationException("No se encontró VerificaSolicitudDescargaResult");
 
-        string msg = result.GetAttribute("Mensaje");
-        string codEst = result.GetAttribute("CodEstatus");
-        string codSol = result.GetAttribute("CodigoEstadoSolicitud");
-        string estado = result.GetAttribute("EstadoSolicitud");
-        string numStr = result.GetAttribute("NumeroCFDIs");
+        string msg = res.GetAttribute("Mensaje");
+        string codEst = res.GetAttribute("CodEstatus");
+        string codSol = res.GetAttribute("CodigoEstadoSolicitud");
+        string estStr = res.GetAttribute("EstadoSolicitud");
+        string numStr = res.GetAttribute("NumeroCFDIs");
 
         int.TryParse(numStr, out int nCfdis);
-        int.TryParse(estado, out int estadoInt);
-        var estadoEnum = Enum.IsDefined(typeof(EstadoSolicitud), estadoInt)
-            ? (EstadoSolicitud)estadoInt
-            : EstadoSolicitud.Error; // safe default
+        int.TryParse(estStr, out int estInt);
 
-        // Collect package IDs if present (only when Terminada=3 per SAT docs)
+        var estadoEnum = Enum.IsDefined(typeof(EstadoSolicitud), estInt)
+            ? (EstadoSolicitud)estInt
+            : EstadoSolicitud.Error;
+
+        // Ids de paquetes: atributo o elementos (robusto)
         var ids = new List<string>();
-        foreach (XmlNode n in result.SelectNodes("./*[local-name()='IdsPaquetes']"))
-            if (!string.IsNullOrWhiteSpace(n.InnerText)) ids.Add(n.InnerText.Trim());
+        var attrIds = res.GetAttribute("IdsPaquetes");
+        if (!string.IsNullOrWhiteSpace(attrIds))
+        {
+            foreach (var p in attrIds.Split(new[] { ',', ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                ids.Add(p);
+        }
+        else
+        {
+            foreach (XmlNode n in res.SelectNodes("./*[local-name()='IdsPaquetes']"))
+            {
+                var t = n.InnerText?.Trim();
+                if (!string.IsNullOrEmpty(t)) ids.Add(t);
+            }
+        }
 
-        // Human status synthesis (prioritize workflow state; add code hints if present)
         string human = estadoEnum switch
         {
             EstadoSolicitud.Terminada => "Terminada",
@@ -545,29 +539,31 @@ public sealed class SatMassiveClient : ISatMassiveService
             EstadoSolicitud.Aceptada => "Aceptada",
             EstadoSolicitud.Rechazada => "Rechazada",
             EstadoSolicitud.Error => "Error",
-            EstadoSolicitud.Vencida => "Vencida (72h después de generado el paquete)",
-            _ => $"Estado {estado}"
+            EstadoSolicitud.Vencida => "Vencida (72h)",
+            _ => $"Estado {estStr}"
         };
 
-        if (!string.IsNullOrEmpty(codSol) && CodigoEstadoSolicitudMap.TryGetValue(codSol, out var codSolMsg))
-            human = $"{human} · {codSolMsg}";
-
-        if (!string.IsNullOrEmpty(codEst) && CodEstatusMap.TryGetValue(codEst, out var codEstMsg))
-            human = $"{human} · {codEstMsg}";
+        // Mensajes amigables (si aplica)
+        if (!string.IsNullOrWhiteSpace(codSol) && CodigoEstadoSolicitudMap.TryGetValue(codSol, out var m1))
+            human = $"{human} · {m1}";
+        if (!string.IsNullOrWhiteSpace(codEst) && CodEstatusMap.TryGetValue(codEst, out var m2))
+            human = $"{human} · {m2}";
 
         bool isFinal = (estadoEnum == EstadoSolicitud.Terminada) || (ids.Count > 0);
 
-        return new VerifyResult(
-            Mensaje: msg,
-            CodEstatus: codEst,
-            CodigoEstadoSolicitud: codSol,
-            Estado: estadoEnum,
-            NumeroCfdis: nCfdis,
-            IdsPaquetes: ids,
-            IsFinal: isFinal,
-            HumanStatus: string.IsNullOrWhiteSpace(human) ? msg : human
-        );
+        return new VerifyResult
+        {
+            Mensaje = msg,
+            CodEstatus = codEst,
+            CodigoEstadoSolicitud = codSol,
+            Estado = estadoEnum,
+            NumeroCfdis = nCfdis,
+            PackageIds = ids,
+            IsFinal = isFinal,
+            HumanStatus = string.IsNullOrWhiteSpace(human) ? msg : human
+        };
     }
+
 
 
 

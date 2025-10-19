@@ -2,6 +2,8 @@
 using Sat.MassiveDownload;
 using Sat.MassiveDownload.Core;
 using Sat.MassiveDownload.Crypto;
+using Sat.MassiveDownload.Models;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
@@ -19,8 +21,8 @@ string keyPath = s["KeyPath"]!;
 string keyPass = s["KeyPassword"]!;
 string rfcSolicitante = s["RfcSolicitante"]!;
 bool issued = bool.Parse(s["Issued"] ?? "false");
-DateTime startUtc = DateTime.Parse(s["StartDateUtc"]!);
-DateTime endUtc = DateTime.Parse(s["EndDateUtc"]!);
+DateTime startUtc = ParseToUtc(s["StartDateUtc"]!);
+DateTime endUtc = ParseToUtc(s["EndDateUtc"]!);
 string? filterRfc = s["FilterRfc"];
 string tipoSolicitud = s["TipoSolicitud"] ?? "CFDI";
 string? estado = s["Estado"];
@@ -56,39 +58,73 @@ Console.WriteLine($"Folio (IdSolicitud): {idSolicitud}");
 
 // 5) Verify loop (simple)
 Console.Write("Verifying");
+var pollDelay = TimeSpan.FromSeconds(15);
+var timeout = TimeSpan.FromMinutes(12);
+var started = DateTime.UtcNow;
+
 while (true)
 {
     var v = await svc.VerifyAsync(idSolicitud, rfcSolicitante);
-    Console.Write($".");
-    if (v.Status.Equals("Terminada", StringComparison.OrdinalIgnoreCase))
-    {
-        Console.WriteLine("\nSolicitud Terminada.");
-        if (v.PackageIds.Count == 0)
-        {
-            Console.WriteLine("No packages returned.");
-            break;
-        }
+    Console.Write('.');
 
-        // 6) Download packages
+    // If packages are already listed, we can safely download now
+    if (v.PackageIds.Count > 0)
+    {
+        Console.WriteLine("\nPaquetes listos (descargando)...");
         foreach (var pkgId in v.PackageIds)
         {
-            Console.WriteLine($"Downloading package {pkgId}...");
-            var zipBytes = await svc.DownloadPackageAsync(pkgId, rfcSolicitante);
-            if (zipBytes is null) { Console.WriteLine("No data"); continue; }
-            var zipPath = Path.Combine(outputDir, $"{pkgId}.zip");
-            await File.WriteAllBytesAsync(zipPath, zipBytes);
-            Console.WriteLine($"Saved: {zipPath}");
+            var bytes = await svc.DownloadPackageAsync(pkgId, rfcSolicitante);
+            var path = Path.Combine(outputDir, $"{pkgId}.zip");
+            await File.WriteAllBytesAsync(path, bytes!);
+            Console.WriteLine($"ZIP guardado: {path}");
         }
-        break;
-    }
-    if (v.Status.Equals("Rechazada", StringComparison.OrdinalIgnoreCase) || v.Status.Equals("Error", StringComparison.OrdinalIgnoreCase))
-    {
-        Console.WriteLine($"\nSolicitud rechazada o con error: {v.Code} {v.Message}");
-        break;
+        break; // <-- exit after download
     }
 
-    await Task.Delay(TimeSpan.FromSeconds(15)); // simple polling for demo
+    if (v.Estado == EstadoSolicitud.Terminada)
+    {
+        Console.WriteLine("\nSolicitud Terminada.");
+        if (v.NumeroCfdis == 0 || v.PackageIds.Count == 0)
+        {
+            Console.WriteLine("Terminada sin paquetes/CFDIs.");
+        }
+        else
+        {
+            foreach (var pkgId in v.PackageIds)
+            {
+                var bytes = await svc.DownloadPackageAsync(pkgId, rfcSolicitante);
+                var path = Path.Combine(outputDir, $"{pkgId}.zip");
+                await File.WriteAllBytesAsync(path, bytes!);
+                Console.WriteLine($"ZIP guardado: {path}");
+            }
+        }
+        break; // <-- exit
+    }
+    else if (v.Estado == EstadoSolicitud.Rechazada || v.Estado == EstadoSolicitud.Error || v.Estado == EstadoSolicitud.Vencida)
+    {
+        Console.WriteLine($"\nFinalizada sin éxito: {v.HumanStatus} (CodEstatus={v.CodEstatus}, CodigoEstadoSolicitud={v.CodigoEstadoSolicitud})");
+        break; // <-- exit
+    }
+    else if (v.CodigoEstadoSolicitud == "5004") // No se encontró info
+    {
+        Console.WriteLine("\nNo hay información para esos parámetros (5004).");
+        break; // <-- exit
+    }
+    else
+    {
+        Console.WriteLine($" Aún en proceso: {v.HumanStatus}");
+    }
+
+    // Timeout / cancellation safety
+    if (DateTime.UtcNow - started > timeout)
+    {
+        Console.WriteLine("\nTiempo de espera agotado esperando la terminación.");
+        break; // <-- exit
+    }
+
+    await Task.Delay(pollDelay);
 }
+
 Console.WriteLine("Done.");
 
 static void SmokeTestCert(X509Certificate2 cert)
@@ -107,4 +143,12 @@ static void SmokeTestPrivateKey(X509Certificate2 cert)
     if (rsa is null) throw new InvalidOperationException("No se adjuntó la private key.");
     var test = rsa.Encrypt(new byte[16], RSAEncryptionPadding.Pkcs1);
     Console.WriteLine($"RSA OK, bytes: {test.Length}");
+}
+
+static DateTime ParseToUtc(string text)
+{
+    // Accepts "Z", explicit offsets, or local, and normalizes to UTC exactly once
+    var dto = DateTimeOffset.Parse(text, CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+    return dto.UtcDateTime; // Kind=Utc
 }
