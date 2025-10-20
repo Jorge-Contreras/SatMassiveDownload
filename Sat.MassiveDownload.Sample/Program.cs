@@ -28,7 +28,7 @@ string tipoSolicitud = s["TipoSolicitud"] ?? "CFDI";
 string? estado = s["Estado"];
 string outputDir = s["OutputDir"] ?? ".";
 
-usePfx = false;
+
 Directory.CreateDirectory(outputDir);
 
 // 1) Load certificate
